@@ -1,72 +1,171 @@
-import { prisma } from "@/lib/prisma";
-import { NextResponse } from "next/server";
+// =============================================================
+// CONTROLADOR: POST /api/seed — Poblar BD con datos iniciales
+// Capa 4: Controlador REST
+// Alternativa HTTP al seed de Prisma CLI
+// =============================================================
 
-// Sample teams for 4 groups (A-D) with 4 teams each = 16 teams, 2 matches per group = 8 sample matches
-const SAMPLE_TEAMS = [
-  { name: "Argentina", countryCode: "AR", group: "A" },
-  { name: "México", countryCode: "MX", group: "A" },
-  { name: "Polonia", countryCode: "PL", group: "A" },
-  { name: "Arabia Saudita", countryCode: "SA", group: "A" },
+import { NextResponse } from 'next/server';
+import prisma from '@/lib/prisma';
 
-  { name: "Brasil", countryCode: "BR", group: "B" },
-  { name: "Serbia", countryCode: "RS", group: "B" },
-  { name: "Suiza", countryCode: "CH", group: "B" },
-  { name: "Camerún", countryCode: "CM", group: "B" },
+// Datos de los 48 equipos organizados por grupo
+const gruposConEquipos: Record<string, { nombre: string; pais: string }[]> = {
+  A: [
+    { nombre: 'México', pais: 'México' },
+    { nombre: 'Sudáfrica', pais: 'Sudáfrica' },
+    { nombre: 'República de Corea', pais: 'República de Corea' },
+    { nombre: 'Chequia', pais: 'Chequia' },
+  ],
+  B: [
+    { nombre: 'Canadá', pais: 'Canadá' },
+    { nombre: 'Bosnia y Herzegovina', pais: 'Bosnia y Herzegovina' },
+    { nombre: 'Catar', pais: 'Catar' },
+    { nombre: 'Suiza', pais: 'Suiza' },
+  ],
+  C: [
+    { nombre: 'Brasil', pais: 'Brasil' },
+    { nombre: 'Marruecos', pais: 'Marruecos' },
+    { nombre: 'Haití', pais: 'Haití' },
+    { nombre: 'Escocia', pais: 'Escocia' },
+  ],
+  D: [
+    { nombre: 'Estados Unidos', pais: 'Estados Unidos' },
+    { nombre: 'Paraguay', pais: 'Paraguay' },
+    { nombre: 'Australia', pais: 'Australia' },
+    { nombre: 'Turquía', pais: 'Turquía' },
+  ],
+  E: [
+    { nombre: 'Alemania', pais: 'Alemania' },
+    { nombre: 'Curazao', pais: 'Curazao' },
+    { nombre: 'Costa de Marfil', pais: 'Costa de Marfil' },
+    { nombre: 'Ecuador', pais: 'Ecuador' },
+  ],
+  F: [
+    { nombre: 'Países Bajos', pais: 'Países Bajos' },
+    { nombre: 'Japón', pais: 'Japón' },
+    { nombre: 'Suecia', pais: 'Suecia' },
+    { nombre: 'Túnez', pais: 'Túnez' },
+  ],
+  G: [
+    { nombre: 'Bélgica', pais: 'Bélgica' },
+    { nombre: 'Egipto', pais: 'Egipto' },
+    { nombre: 'RI de Irán', pais: 'Irán' },
+    { nombre: 'Nueva Zelanda', pais: 'Nueva Zelanda' },
+  ],
+  H: [
+    { nombre: 'España', pais: 'España' },
+    { nombre: 'Islas de Cabo Verde', pais: 'Cabo Verde' },
+    { nombre: 'Arabia Saudí', pais: 'Arabia Saudí' },
+    { nombre: 'Uruguay', pais: 'Uruguay' },
+  ],
+  I: [
+    { nombre: 'Francia', pais: 'Francia' },
+    { nombre: 'Senegal', pais: 'Senegal' },
+    { nombre: 'Irak', pais: 'Irak' },
+    { nombre: 'Noruega', pais: 'Noruega' },
+  ],
+  J: [
+    { nombre: 'Argentina', pais: 'Argentina' },
+    { nombre: 'Argelia', pais: 'Argelia' },
+    { nombre: 'Austria', pais: 'Austria' },
+    { nombre: 'Jordania', pais: 'Jordania' },
+  ],
+  K: [
+    { nombre: 'Portugal', pais: 'Portugal' },
+    { nombre: 'RD Congo', pais: 'RD Congo' },
+    { nombre: 'Uzbekistán', pais: 'Uzbekistán' },
+    { nombre: 'Colombia', pais: 'Colombia' },
+  ],
+  L: [
+    { nombre: 'Inglaterra', pais: 'Inglaterra' },
+    { nombre: 'Croacia', pais: 'Croacia' },
+    { nombre: 'Ghana', pais: 'Ghana' },
+    { nombre: 'Panamá', pais: 'Panamá' },
+  ],
+};
 
-  { name: "España", countryCode: "ES", group: "C" },
-  { name: "Alemania", countryCode: "DE", group: "C" },
-  { name: "Japón", countryCode: "JP", group: "C" },
-  { name: "Costa Rica", countryCode: "CR", group: "C" },
-
-  { name: "Francia", countryCode: "FR", group: "D" },
-  { name: "Dinamarca", countryCode: "DK", group: "D" },
-  { name: "Australia", countryCode: "AU", group: "D" },
-  { name: "Túnez", countryCode: "TN", group: "D" },
-];
+function generarPartidosGrupo(equipoIds: number[]): [number, number][] {
+  const partidos: [number, number][] = [];
+  for (let i = 0; i < equipoIds.length; i++) {
+    for (let j = i + 1; j < equipoIds.length; j++) {
+      partidos.push([equipoIds[i], equipoIds[j]]);
+    }
+  }
+  return partidos;
+}
 
 export async function POST() {
-  // Check if data already exists
-  const existingTeams = await prisma.team.count();
-  if (existingTeams > 0) {
-    return NextResponse.json({ error: "Ya hay datos cargados." }, { status: 400 });
-  }
+  try {
+    // Limpiar datos existentes (orden inverso por FK)
+    await prisma.puntuacion.deleteMany();
+    await prisma.pronostico.deleteMany();
+    await prisma.resultadoAdmin.deleteMany();
+    await prisma.partido.deleteMany();
+    await prisma.equipo.deleteMany();
+    await prisma.grupo.deleteMany();
+    await prisma.usuario.deleteMany();
 
-  // Create teams
-  const createdTeams: Record<string, string> = {};
-  for (const t of SAMPLE_TEAMS) {
-    const team = await prisma.team.create({ data: t });
-    createdTeams[t.name] = team.id;
-  }
+    // Crear los 12 grupos
+    const letras = Object.keys(gruposConEquipos);
+    const gruposCreados: Record<string, number> = {};
 
-  // Create matches (first round: team 1 vs 2, team 3 vs 4 per group)
-  const groups = ["A", "B", "C", "D"];
-  for (const g of groups) {
-    const groupTeams = SAMPLE_TEAMS.filter((t) => t.group === g);
-    // Match 1: team[0] vs team[1]
-    await prisma.match.create({
-      data: {
-        group: g,
-        homeTeamId: createdTeams[groupTeams[0].name],
-        awayTeamId: createdTeams[groupTeams[1].name],
-      },
-    });
-    // Match 2: team[2] vs team[3]
-    await prisma.match.create({
-      data: {
-        group: g,
-        homeTeamId: createdTeams[groupTeams[2].name],
-        awayTeamId: createdTeams[groupTeams[3].name],
-      },
-    });
-    // Match 3: team[0] vs team[2]
-    await prisma.match.create({
-      data: {
-        group: g,
-        homeTeamId: createdTeams[groupTeams[0].name],
-        awayTeamId: createdTeams[groupTeams[2].name],
-      },
-    });
-  }
+    for (const letra of letras) {
+      const grupo = await prisma.grupo.create({
+        data: { letra, descripcion: `Grupo ${letra} — Mundial 2026` },
+      });
+      gruposCreados[letra] = grupo.id;
+    }
 
-  return NextResponse.json({ ok: true, teamsCreated: SAMPLE_TEAMS.length, matchesCreated: groups.length * 3 });
+    // Crear los 48 equipos
+    const equiposPorGrupo: Record<string, number[]> = {};
+    let totalEquipos = 0;
+
+    for (const [letra, equipos] of Object.entries(gruposConEquipos)) {
+      equiposPorGrupo[letra] = [];
+      for (const eq of equipos) {
+        const equipo = await prisma.equipo.create({
+          data: { nombre: eq.nombre, pais: eq.pais, grupoId: gruposCreados[letra] },
+        });
+        equiposPorGrupo[letra].push(equipo.id);
+        totalEquipos++;
+      }
+    }
+
+    // Crear partidos de fase de grupos (6 por grupo = 72 totales)
+    let totalPartidos = 0;
+    const fechaBase = new Date('2026-06-11T18:00:00Z');
+
+    for (const [letra, ids] of Object.entries(equiposPorGrupo)) {
+      const enfrentamientos = generarPartidosGrupo(ids);
+      let diaOffset = 0;
+
+      for (const [localId, visitanteId] of enfrentamientos) {
+        const fechaPartido = new Date(fechaBase);
+        fechaPartido.setDate(fechaPartido.getDate() + diaOffset);
+        fechaPartido.setHours(fechaPartido.getHours() + (totalPartidos % 3) * 3);
+
+        await prisma.partido.create({
+          data: {
+            grupoId: gruposCreados[letra],
+            idEquipoLocal: localId,
+            idEquipoVisitante: visitanteId,
+            fechaInicio: fechaPartido,
+            fase: 'grupos',
+            estado: 'programado',
+          },
+        });
+        totalPartidos++;
+        diaOffset++;
+      }
+    }
+
+    return NextResponse.json({
+      mensaje: 'Seed completado exitosamente',
+      grupos: letras.length,
+      equipos: totalEquipos,
+      partidos: totalPartidos,
+    });
+  } catch (error: unknown) {
+    const mensaje = error instanceof Error ? error.message : 'Error interno del servidor';
+    return NextResponse.json({ error: mensaje }, { status: 500 });
+  }
 }

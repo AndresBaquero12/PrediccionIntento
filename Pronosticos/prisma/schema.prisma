@@ -1,3 +1,8 @@
+// =============================================================
+// CAPA 1: MODELO DE DATOS — Sistema de Predicciones Mundial 2026
+// Base de Datos: SQLite local (dev.db)
+// =============================================================
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,54 +11,127 @@ datasource db {
   provider = "sqlite"
 }
 
-model User {
-  id          String       @id @default(cuid())
-  username    String       @unique
-  email       String?
-  createdAt   DateTime     @default(now())
-  predictions Prediction[]
+// ─── USUARIOS ─────────────────────────────────────────────────
+// USR-RF01: Registro de nuevo usuario
+// USR-RF02: Login de usuario
+// USR-RF03: Token de sesión (gestionado por JWT en la capa de servicio)
+model Usuario {
+  id            Int            @id @default(autoincrement())
+  nombreUsuario String         @unique @map("nombre_usuario")
+  correo        String         @unique
+  passwordHash  String         @map("password_hash")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  pronosticos   Pronostico[]
+  puntuaciones  Puntuacion[]
+  resultadosIngresados ResultadoAdmin[]
+
+  @@map("usuarios")
 }
 
-model Team {
-  id          String   @id @default(cuid())
-  name        String
-  countryCode String
-  group       String   // e.g. "A", "B", ... "L"
-  createdAt   DateTime @default(now())
+// ─── GRUPOS ───────────────────────────────────────────────────
+// GRP-RF02: 12 grupos (A-L), cada uno con 4 equipos
+model Grupo {
+  id          Int      @id @default(autoincrement())
+  letra       String   @unique // 'A'..'L'
+  descripcion String?
+  equipos     Equipo[]
+  partidos    Partido[]
 
-  homeMatches Match[] @relation("HomeTeam")
-  awayMatches Match[] @relation("AwayTeam")
+  @@map("grupos")
 }
 
-model Match {
-  id            String   @id @default(cuid())
-  group         String   // e.g. "A", "B"
-  startDate     DateTime @default(now())
+// ─── EQUIPOS ──────────────────────────────────────────────────
+// GRP-RF01: 48 equipos participantes con grupo asignado
+model Equipo {
+  id              Int       @id @default(autoincrement())
+  nombre          String    // "Argentina"
+  pais            String    // "Argentina"
+  grupoId         Int       @map("grupo_id")
+  logo            String?   // URL logo/bandera (opcional)
+  grupo           Grupo     @relation(fields: [grupoId], references: [id])
+  partidosLocal     Partido[] @relation("EquipoLocal")
+  partidosVisitante Partido[] @relation("EquipoVisitante")
 
-  homeTeamId    String
-  awayTeamId    String
-  homeTeam      Team     @relation("HomeTeam", fields: [homeTeamId], references: [id])
-  awayTeam      Team     @relation("AwayTeam", fields: [awayTeamId], references: [id])
-
-  isFinished    Boolean  @default(false)
-  realHomeGoals Int      @default(0)
-  realAwayGoals Int      @default(0)
-
-  predictions   Prediction[]
+  @@map("equipos")
 }
 
-model Prediction {
-  id           String   @id @default(cuid())
-  userId       String
-  matchId      String
-  homeGoals    Int
-  awayGoals    Int
-  pointsEarned Int      @default(0)
+// ─── PARTIDOS ─────────────────────────────────────────────────
+// GRP-RF03: Enfrentamientos por grupo (3 por equipo, 6 por grupo)
+// ELIM-RF01: Partidos eliminatorios con tiempo extra/penales
+model Partido {
+  id                  Int             @id @default(autoincrement())
+  grupoId             Int?            @map("grupo_id")
+  idEquipoLocal       Int             @map("id_equipo_local")
+  idEquipoVisitante   Int             @map("id_equipo_visitante")
+  fechaInicio         DateTime?       @map("fecha_inicio")
+  fase                String          @default("grupos")       // 'grupos' | 'eliminatoria'
+  etapa               String?                                   // 'R32'|'R16'|'QF'|'SF'|'3RD'|'FINAL' (solo eliminatoria)
+  golesLocalReal      Int?            @map("goles_local_real")
+  golesVisitanteReal  Int?            @map("goles_visitante_real")
+  penalesLocal        Int?            @map("penales_local")     // Goles en penales (solo eliminatoria)
+  penalesVisitante    Int?            @map("penales_visitante")  // Goles en penales (solo eliminatoria)
+  estado              String          @default("programado")    // 'programado'|'en_juego'|'finalizado'
+  grupo               Grupo?          @relation(fields: [grupoId], references: [id])
+  equipoLocal         Equipo          @relation("EquipoLocal", fields: [idEquipoLocal], references: [id])
+  equipoVisitante     Equipo          @relation("EquipoVisitante", fields: [idEquipoVisitante], references: [id])
+  pronosticos         Pronostico[]
+  puntuaciones        Puntuacion[]
+  resultadoAdmin      ResultadoAdmin?
 
-  user         User     @relation(fields: [userId], references: [id])
-  match        Match    @relation(fields: [matchId], references: [id])
+  @@map("partidos")
+}
 
-  createdAt    DateTime @default(now())
-  
-  @@unique([userId, matchId]) // A user can only predict once per match
+// ─── PRONÓSTICOS ──────────────────────────────────────────────
+// PRED-RF01: Asociar pronóstico a partido
+// PRED-RF02: Ingresar predicción de marcador
+// PRED-RF03: Modificar antes del inicio
+// PRED-RF04: Persistir en BD
+// PRED-RF05: Bloqueo tras inicio (validado en capa de servicio)
+model Pronostico {
+  id                     Int       @id @default(autoincrement())
+  idUsuario              Int       @map("id_usuario")
+  idPartido              Int       @map("id_partido")
+  golesLocalPredicho     Int       @map("goles_local_predicho")
+  golesVisitantePredicho Int       @map("goles_visitante_predicho")
+  createdAt              DateTime  @default(now()) @map("created_at")
+  updatedAt              DateTime  @updatedAt @map("updated_at")
+  usuario                Usuario   @relation(fields: [idUsuario], references: [id])
+  partido                Partido   @relation(fields: [idPartido], references: [id])
+
+  @@unique([idUsuario, idPartido]) // Solo un pronóstico por usuario por partido
+  @@map("pronosticos")
+}
+
+// ─── PUNTUACIONES ─────────────────────────────────────────────
+// CALC-RF02: 0 puntos si falla
+// CALC-RF03: +1 si acierta resultado (G/E/P)
+// CALC-RF04: +2 si acierta marcador exacto
+// CALC-RF05: Se calcula solo tras ingreso de resultado real
+model Puntuacion {
+  id              Int       @id @default(autoincrement())
+  idUsuario       Int       @map("id_usuario")
+  idPartido       Int       @map("id_partido")
+  puntos          Int       @default(0)
+  detalle         String?   // 'exacto'|'resultado'|'fallido' (para auditoría)
+  fechaCalculo    DateTime  @default(now()) @map("fecha_calculo")
+  usuario         Usuario   @relation(fields: [idUsuario], references: [id])
+  partido         Partido   @relation(fields: [idPartido], references: [id])
+
+  @@unique([idUsuario, idPartido]) // Una puntuación por usuario por partido
+  @@map("puntuaciones")
+}
+
+// ─── RESULTADOS ADMIN ─────────────────────────────────────────
+// CALC-RF01: Registro administrativo del resultado real
+model ResultadoAdmin {
+  id              Int       @id @default(autoincrement())
+  idPartido       Int       @unique @map("id_partido")
+  golesLocal      Int       @map("goles_local")
+  golesVisitante  Int       @map("goles_visitante")
+  ingresadoPor    Int       @map("ingresado_por")
+  timestamp       DateTime  @default(now())
+  partido         Partido   @relation(fields: [idPartido], references: [id])
+  admin           Usuario   @relation(fields: [ingresadoPor], references: [id])
+
+  @@map("resultados_admin")
 }

@@ -1,159 +1,275 @@
-"use client";
+'use client';
 
-import { useEffect, useState, useTransition } from "react";
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Navbar from '@/components/Navbar';
 
-interface Team {
-  id: string;
-  name: string;
-  countryCode: string;
-  group: string;
+// Credenciales de admin quemadas
+const ADMIN_CORREO = 'andres@admin.com';
+const ADMIN_PASSWORD = '1234';
+
+interface Equipo {
+  id: number;
+  nombre: string;
 }
 
-interface Match {
-  id: string;
-  group: string;
-  homeTeam: Team;
-  awayTeam: Team;
-  isFinished: boolean;
-  realHomeGoals: number;
-  realAwayGoals: number;
-  predictions: { id: string; userId: string; homeGoals: number; awayGoals: number; pointsEarned: number }[];
+interface Partido {
+  id: number;
+  equipoLocal: Equipo;
+  equipoVisitante: Equipo;
+  fechaInicio: string | null;
+  estado: string;
+  fase: string;
+  etapa: string | null;
+  golesLocalReal: number | null;
+  golesVisitanteReal: number | null;
 }
 
 export default function AdminPage() {
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [isPending, startTransition] = useTransition();
-  const [message, setMessage] = useState("");
+  const router = useRouter();
+  // Admin auth gate — se resetea cada vez que se entra a /admin
+  const [adminAutenticado, setAdminAutenticado] = useState(false);
+  const [adminCorreo, setAdminCorreo] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [adminError, setAdminError] = useState('');
+
+  const [partidos, setPartidos] = useState<Partido[]>([]);
+  const [cargando, setCargando] = useState(true);
+  const [token, setToken] = useState('');
+  const [resultados, setResultados] = useState<Record<number, { golesLocal: number; golesVisitante: number }>>({});
+  const [mensaje, setMensaje] = useState('');
+  const [error, setError] = useState('');
+  const [procesando, setProcesando] = useState<number | null>(null);
 
   useEffect(() => {
-    loadMatches();
-  }, []);
+    const t = localStorage.getItem('token');
+    if (!t) {
+      router.push('/');
+      return;
+    }
+    setToken(t);
+  }, [router]);
 
-  function loadMatches() {
-    fetch("/api/matches")
-      .then((r) => r.json())
-      .then(setMatches);
+  useEffect(() => {
+    if (!token || !adminAutenticado) return;
+    fetchPartidos();
+  }, [token, adminAutenticado]);
+
+  function handleAdminLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setAdminError('');
+
+    if (adminCorreo === ADMIN_CORREO && adminPassword === ADMIN_PASSWORD) {
+      setAdminAutenticado(true);
+    } else {
+      setAdminError('Credenciales de administrador incorrectas.');
+    }
   }
 
-  function handleResolve(matchId: string, homeGoals: string, awayGoals: string) {
-    startTransition(async () => {
-      const res = await fetch("/api/matches/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+  async function fetchPartidos() {
+    try {
+      const res = await fetch('/api/partidos');
+      const data = await res.json();
+      // Filtrar solo pendientes y en_juego
+      const pendientes = (Array.isArray(data) ? data : []).filter(
+        (p: Partido) => p.estado !== 'finalizado'
+      );
+      setPartidos(pendientes);
+    } catch {
+      console.error('Error cargando partidos');
+    } finally {
+      setCargando(false);
+    }
+  }
+
+  function setResultado(idPartido: number, campo: 'golesLocal' | 'golesVisitante', valor: number) {
+    setResultados((prev) => ({
+      ...prev,
+      [idPartido]: {
+        ...prev[idPartido],
+        golesLocal: prev[idPartido]?.golesLocal ?? 0,
+        golesVisitante: prev[idPartido]?.golesVisitante ?? 0,
+        [campo]: Math.max(0, valor),
+      },
+    }));
+  }
+
+  async function handleFinalizar(idPartido: number) {
+    const res_data = resultados[idPartido];
+    if (!res_data) {
+      setError('Ingresa los goles antes de finalizar.');
+      return;
+    }
+
+    setProcesando(idPartido);
+    setMensaje('');
+    setError('');
+
+    try {
+      const res = await fetch('/api/partidos/finalizar', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          matchId,
-          realHomeGoals: parseInt(homeGoals),
-          realAwayGoals: parseInt(awayGoals),
+          idPartido,
+          golesLocal: res_data.golesLocal,
+          golesVisitante: res_data.golesVisitante,
         }),
       });
-      if (res.ok) {
-        setMessage("✅ Partido resuelto y puntos calculados.");
-        loadMatches();
-      } else {
-        setMessage("❌ Error al resolver el partido.");
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setError(data.error || 'Error al finalizar partido');
+        return;
       }
-      setTimeout(() => setMessage(""), 3000);
+
+      setMensaje(data.mensaje);
+      // Remover el partido de la lista
+      setPartidos((prev) => prev.filter((p) => p.id !== idPartido));
+    } catch {
+      setError('Error de conexión.');
+    } finally {
+      setProcesando(null);
+    }
+  }
+
+  function formatFecha(fecha: string | null) {
+    if (!fecha) return 'Sin fecha';
+    return new Date(fecha).toLocaleDateString('es-CO', {
+      day: 'numeric',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   }
 
-  async function handleSeed() {
-    setMessage("⏳ Cargando equipos y partidos de ejemplo...");
-    const res = await fetch("/api/seed", { method: "POST" });
-    if (res.ok) {
-      setMessage("✅ Datos de ejemplo cargados exitosamente.");
-      loadMatches();
-    } else {
-      const data = await res.json();
-      setMessage(`❌ ${data.error || "Error al cargar datos."}`);
-    }
-    setTimeout(() => setMessage(""), 4000);
+  // ─── Gate de admin: pedir credenciales antes de mostrar el panel ───
+  if (!adminAutenticado) {
+    return (
+      <>
+        <Navbar />
+        <div className="page-content">
+          <div className="auth-container" style={{ minHeight: 'calc(100vh - 5rem)' }}>
+            <div className="auth-card animate-fade-in">
+              <h1 className="auth-title" style={{ fontSize: '1.5rem' }}>
+                🔒 <span>Acceso Admin</span>
+              </h1>
+              <p className="auth-subtitle">
+                Ingresa las credenciales de administrador para continuar.
+              </p>
+
+              {adminError && <div className="alert alert-error">{adminError}</div>}
+
+              <form className="auth-form" onSubmit={handleAdminLogin}>
+                <div className="input-group">
+                  <label htmlFor="adminCorreo">Correo de admin</label>
+                  <input
+                    id="adminCorreo"
+                    className="input"
+                    type="email"
+                    placeholder="admin@correo.com"
+                    value={adminCorreo}
+                    onChange={(e) => setAdminCorreo(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="input-group">
+                  <label htmlFor="adminPassword">Contraseña de admin</label>
+                  <input
+                    id="adminPassword"
+                    className="input"
+                    type="password"
+                    placeholder="Contraseña"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <button type="submit" className="btn btn-primary btn-block">
+                  Acceder al Panel
+                </button>
+              </form>
+            </div>
+          </div>
+        </div>
+      </>
+    );
   }
 
-  const pendingMatches = matches.filter((m) => !m.isFinished);
-  const finishedMatches = matches.filter((m) => m.isFinished);
-
+  // ─── Panel admin (solo si está autenticado) ───
   return (
-    <div className="dashboard-layout">
-      <div className="header-nav">
-        <h1 className="title"><span>Admin</span> Panel</h1>
-        <button className="primary-btn" style={{ padding: "0.6rem 1.2rem", fontSize: "0.85rem" }} onClick={handleSeed}>
-          🌱 Cargar Datos de Ejemplo
-        </button>
-      </div>
+    <>
+      <Navbar />
+      <div className="page-content">
+        <div className="container">
+          <div className="dashboard-header animate-fade-in">
+            <h1>⚙️ Panel Administrativo</h1>
+            <p>Ingresa los resultados reales de los partidos para calcular los puntos de los participantes.</p>
+          </div>
 
-      {message && (
-        <div style={{
-          background: "rgba(102,252,241,0.1)",
-          border: "1px solid var(--secondary)",
-          borderRadius: "10px",
-          padding: "1rem",
-          marginBottom: "1.5rem",
-          color: "var(--secondary)",
-          textAlign: "center",
-        }}>
-          {message}
+          {mensaje && <div className="alert alert-success animate-fade-in">{mensaje}</div>}
+          {error && <div className="alert alert-error animate-fade-in">{error}</div>}
+
+          {cargando ? (
+            <div className="loader">
+              <div className="spinner" />
+            </div>
+          ) : partidos.length === 0 ? (
+            <div className="empty-state animate-fade-in">
+              <div className="empty-state-icon">✅</div>
+              <h3>Todos los partidos están finalizados</h3>
+              <p>No hay partidos pendientes por registrar.</p>
+            </div>
+          ) : (
+            <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              {partidos.map((partido) => (
+                <div key={partido.id} className="admin-card">
+                  <div className="admin-card-info">
+                    <h3>
+                      {partido.equipoLocal.nombre} vs {partido.equipoVisitante.nombre}
+                    </h3>
+                    <p>
+                      {partido.fase === 'eliminatoria' ? `Eliminatoria - ${partido.etapa}` : 'Fase de Grupos'} · {formatFecha(partido.fechaInicio)}
+                    </p>
+                  </div>
+                  <div className="admin-inputs">
+                    <input
+                      className="input input-score"
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={resultados[partido.id]?.golesLocal ?? ''}
+                      onChange={(e) => setResultado(partido.id, 'golesLocal', parseInt(e.target.value) || 0)}
+                    />
+                    <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>-</span>
+                    <input
+                      className="input input-score"
+                      type="number"
+                      min="0"
+                      placeholder="0"
+                      value={resultados[partido.id]?.golesVisitante ?? ''}
+                      onChange={(e) => setResultado(partido.id, 'golesVisitante', parseInt(e.target.value) || 0)}
+                    />
+                    <button
+                      className="btn btn-primary btn-sm"
+                      onClick={() => handleFinalizar(partido.id)}
+                      disabled={procesando === partido.id}
+                    >
+                      {procesando === partido.id ? '...' : 'Finalizar'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
-      )}
-
-      <h2 style={{ color: "var(--secondary)", marginBottom: "1rem" }}>
-        Partidos Pendientes ({pendingMatches.length})
-      </h2>
-      <div className="match-list">
-        {pendingMatches.map((match) => (
-          <div className="match-card" key={match.id}>
-            <div className="match-header">
-              <span>Grupo {match.group}</span>
-              <span>{match.predictions.length} pronósticos recibidos</span>
-            </div>
-            <div className="match-teams">
-              <div className="team">{match.homeTeam.name}</div>
-              <span className="vs">vs</span>
-              <div className="team away">{match.awayTeam.name}</div>
-            </div>
-            <form
-              className="prediction-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const form = e.currentTarget;
-                const hg = (form.elements.namedItem("hg") as HTMLInputElement).value;
-                const ag = (form.elements.namedItem("ag") as HTMLInputElement).value;
-                handleResolve(match.id, hg, ag);
-              }}
-            >
-              <input type="number" name="hg" min="0" max="20" className="score-input" defaultValue={0} disabled={isPending} />
-              <span className="vs">-</span>
-              <input type="number" name="ag" min="0" max="20" className="score-input" defaultValue={0} disabled={isPending} />
-              <button type="submit" className="primary-btn" style={{ padding: "0.8rem 1.5rem", fontSize: "0.9rem" }} disabled={isPending}>
-                Finalizar
-              </button>
-            </form>
-          </div>
-        ))}
-        {pendingMatches.length === 0 && (
-          <p style={{ color: "var(--text-muted)", textAlign: "center" }}>No hay partidos pendientes.</p>
-        )}
       </div>
-
-      <h2 style={{ color: "var(--text-muted)", margin: "2.5rem 0 1rem" }}>
-        Partidos Finalizados ({finishedMatches.length})
-      </h2>
-      <div className="match-list">
-        {finishedMatches.map((match) => (
-          <div className="match-card" key={match.id} style={{ opacity: 0.6 }}>
-            <div className="match-header">
-              <span>Grupo {match.group}</span>
-              <span className="points-badge">Finalizado</span>
-            </div>
-            <div className="match-teams">
-              <div className="team">{match.homeTeam.name}</div>
-              <span style={{ color: "var(--secondary)", fontSize: "2rem", fontWeight: 800 }}>
-                {match.realHomeGoals} - {match.realAwayGoals}
-              </span>
-              <div className="team away">{match.awayTeam.name}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
+    </>
   );
 }
+
