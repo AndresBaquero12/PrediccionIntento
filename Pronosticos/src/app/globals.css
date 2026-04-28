@@ -1051,3 +1051,329 @@ a:hover {
   }
 }
 
+/* ─── Clasificación Grid ──────────────────────────────────── */
+.clasificacion-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+  gap: 1.25rem;
+}
+
+@media (max-width: 768px) {
+  .clasificacion-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ─── Tabla de Grupo (Posiciones) ─────────────────────────── */
+.tabla-grupo-container {
+  background: var(--bg-card);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+  transition: all var(--transition-base);
+}
+
+.tabla-grupo-container:hover {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 15px rgba(0, 229, 160, 0.08);
+}
+
+.tabla-grupo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.tabla-grupo-letra {
+  font-family: var(--font-heading);
+  font-weight: 800;
+  font-size: 1.1rem;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tabla-grupo-scroll {
+  overflow-x: auto;
+}
+
+.tabla-grupo {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.tabla-grupo th {
+  padding: 0.5rem 0.6rem;
+  text-align: center;
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+.tabla-grupo th:nth-child(2),
+.tabla-grupo td.tabla-grupo-equipo {
+  text-align: left;
+}
+
+.tabla-grupo td {
+  padding: 0.55rem 0.6rem;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  transition: background var(--transition-fast);
+}
+
+.tabla-grupo tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.tabla-grupo-equipo {
+  font-weight: 600;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.tabla-grupo-pts {
+  font-weight: 800;
+  font-size: 0.95rem;
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.tabla-grupo-pos {
+  width: 36px;
+}
+
+.pos-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-weight: 800;
+  font-size: 0.75rem;
+  font-family: var(--font-heading);
+}
+
+.pos-badge.pos-1,
+.pos-badge.pos-2 {
+  background: rgba(0, 229, 160, 0.15);
+  color: var(--accent-primary);
+}
+
+.pos-badge.pos-3 {
+  background: rgba(255, 179, 71, 0.15);
+  color: var(--accent-warning);
+}
+
+.pos-badge.pos-4 {
+  color: var(--text-muted);
+}
+
+/* Filas de clasificación */
+tr.clasificado-directo td {
+  background: rgba(0, 229, 160, 0.06);
+}
+
+tr.posible-clasificado td {
+  background: rgba(255, 179, 71, 0.06);
+}
+
+.stat-positive { color: var(--accent-primary); font-weight: 600; }
+.stat-negative { color: var(--accent-danger); font-weight: 600; }
+
+.tabla-grupo-legend {
+  display: flex;
+  gap: 1rem;
+  padding: 0.6rem 1.25rem;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
+}
+
+.legend-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.clasificado-dot { background: var(--accent-primary); }
+.posible-dot { background: var(--accent-warning); }
+
+/* ─── Admin Flechas ───────────────────────────────────────── */
+.admin-flechas-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0.25rem !important;
+}
+
+.admin-flecha {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 16px;
+  border: none;
+  border-radius: 4px;
+  background: var(--bg-glass);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.55rem;
+  transition: all var(--transition-fast);
+}
+
+.admin-flecha:hover:not(:disabled) {
+  background: var(--accent-gradient);
+  color: #0a0a1a;
+}
+
+.admin-flecha:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* ─── Bracket ─────────────────────────────────────────────── */
+.bracket-wrapper {
+  padding-bottom: 2rem;
+}
+
+.bracket-container {
+  display: flex;
+  gap: 1.5rem;
+  overflow-x: auto;
+  padding: 1rem 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-subtle) transparent;
+}
+
+.bracket-container::-webkit-scrollbar {
+  height: 6px;
+}
+
+.bracket-container::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.bracket-container::-webkit-scrollbar-thumb {
+  background: var(--border-subtle);
+  border-radius: 3px;
+}
+
+.bracket-ronda {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 200px;
+  flex-shrink: 0;
+}
+
+.bracket-ronda-titulo {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 0.5rem 1rem;
+  background: var(--bg-glass);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.bracket-ronda-llaves {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  justify-content: space-around;
+  flex: 1;
+}
+
+.bracket-llave {
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: all var(--transition-fast);
+}
+
+.bracket-llave:hover {
+  border-color: var(--border-accent);
+  box-shadow: 0 0 10px rgba(0, 229, 160, 0.08);
+}
+
+.bracket-equipo {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+  transition: background var(--transition-fast);
+}
+
+.bracket-equipo.ganador {
+  background: rgba(0, 229, 160, 0.08);
+}
+
+.bracket-equipo-nombre {
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 140px;
+}
+
+.bracket-equipo-nombre:only-child {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.bracket-gol {
+  font-weight: 800;
+  font-size: 0.9rem;
+  font-family: var(--font-heading);
+  background: var(--accent-gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  min-width: 20px;
+  text-align: center;
+}
+
+.bracket-separador {
+  height: 1px;
+  background: var(--border-subtle);
+}
+
+.bracket-tercer-puesto {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border-subtle);
+  max-width: 240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+@media (max-width: 768px) {
+  .bracket-ronda {
+    min-width: 170px;
+  }
+}

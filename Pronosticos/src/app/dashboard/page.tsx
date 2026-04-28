@@ -26,6 +26,7 @@ interface Pronostico {
   idPartido: number;
   golesLocalPredicho: number;
   golesVisitantePredicho: number;
+  partido?: { id: number };
 }
 
 interface Puntuacion {
@@ -56,50 +57,31 @@ export default function DashboardPage() {
     if (!token) return;
     setCargando(true);
     try {
-      // Cargar partidos del grupo
-      const resPartidos = await fetch(`/api/partidos?grupo=${grupoActual}`);
+      // Cargar partidos del grupo, pronósticos y puntuaciones en paralelo
+      const [resPartidos, resPronosticos, resPuntuaciones] = await Promise.all([
+        fetch(`/api/partidos?grupo=${grupoActual}`),
+        fetch('/api/pronosticos', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+        fetch('/api/puntuaciones', {
+          headers: { Authorization: `Bearer ${token}` },
+        }),
+      ]);
+
       const dataPartidos = await resPartidos.json();
       setPartidos(Array.isArray(dataPartidos) ? dataPartidos : []);
 
-      // Cargar pronósticos del usuario
-      const resPronosticos = await fetch('/api/pronosticos', {
-        headers: { Authorization: `Bearer ${token}` },
-      });
       const dataPronosticos = await resPronosticos.json();
       setPronosticos(Array.isArray(dataPronosticos) ? dataPronosticos : []);
 
-      // Cargar puntuaciones del ranking
-      const resRanking = await fetch('/api/ranking');
-      const dataRanking = await resRanking.json();
-      // No necesitamos puntuaciones individuales del ranking endpoint
-      // Las puntuaciones vienen en los pronósticos si se agregan
-
+      const dataPuntuaciones = await resPuntuaciones.json();
+      setPuntuaciones(Array.isArray(dataPuntuaciones) ? dataPuntuaciones : []);
     } catch {
       console.error('Error cargando datos');
     } finally {
       setCargando(false);
     }
   }, [grupoActual, token]);
-
-  // Cargar puntuaciones individuales
-  useEffect(() => {
-    if (!token) return;
-    const fetchPuntuaciones = async () => {
-      try {
-        // Las puntuaciones las obtenemos de los pronósticos del usuario
-        // La tabla Puntuacion se consulta indirectamente
-        const res = await fetch('/api/pronosticos', {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          // puntuaciones se manejan por separado si hay un endpoint
-        }
-      } catch {
-        // silenciar
-      }
-    };
-    fetchPuntuaciones();
-  }, [token]);
 
   useEffect(() => {
     fetchData();
@@ -129,9 +111,14 @@ export default function DashboardPage() {
   }
 
   function getPronosticoPartido(idPartido: number) {
-    const p = pronosticos.find((pr: Pronostico & { partido?: { id: number }; idPartido?: number }) =>
-      (pr.idPartido === idPartido) || (pr.partido && (pr.partido as { id: number }).id === idPartido)
+    const p = pronosticos.find((pr) =>
+      (pr.idPartido === idPartido) || (pr.partido && pr.partido.id === idPartido)
     );
+    return p || null;
+  }
+
+  function getPuntuacionPartido(idPartido: number) {
+    const p = puntuaciones.find((pu) => pu.idPartido === idPartido);
     return p || null;
   }
 
@@ -166,7 +153,7 @@ export default function DashboardPage() {
                   key={partido.id}
                   partido={partido}
                   pronostico={getPronosticoPartido(partido.id)}
-                  puntuacion={null}
+                  puntuacion={getPuntuacionPartido(partido.id)}
                   onGuardarPronostico={handleGuardarPronostico}
                 />
               ))}

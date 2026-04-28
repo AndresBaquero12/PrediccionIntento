@@ -1,12 +1,9 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Navbar from '@/components/Navbar';
-
-// Credenciales de admin quemadas
-const ADMIN_CORREO = 'andres@admin.com';
-const ADMIN_PASSWORD = '1234';
+import TablaGrupo from '@/components/TablaGrupo';
 
 interface Equipo {
   id: number;
@@ -25,6 +22,24 @@ interface Partido {
   golesVisitanteReal: number | null;
 }
 
+interface StatsEquipo {
+  equipo: { id: number; nombre: string; pais: string };
+  posicion: number;
+  pj: number;
+  g: number;
+  e: number;
+  p: number;
+  gf: number;
+  dif: number;
+  pts: number;
+  grupo: string;
+}
+
+interface GrupoClasificacion {
+  grupo: string;
+  clasificacion: StatsEquipo[];
+}
+
 export default function AdminPage() {
   const router = useRouter();
   // Admin auth gate — se resetea cada vez que se entra a /admin
@@ -32,6 +47,7 @@ export default function AdminPage() {
   const [adminCorreo, setAdminCorreo] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
+  const [adminCargando, setAdminCargando] = useState(false);
 
   const [partidos, setPartidos] = useState<Partido[]>([]);
   const [cargando, setCargando] = useState(true);
@@ -40,6 +56,7 @@ export default function AdminPage() {
   const [mensaje, setMensaje] = useState('');
   const [error, setError] = useState('');
   const [procesando, setProcesando] = useState<number | null>(null);
+  const [gruposClasificacion, setGruposClasificacion] = useState<GrupoClasificacion[]>([]);
 
   useEffect(() => {
     const t = localStorage.getItem('token');
@@ -50,23 +67,7 @@ export default function AdminPage() {
     setToken(t);
   }, [router]);
 
-  useEffect(() => {
-    if (!token || !adminAutenticado) return;
-    fetchPartidos();
-  }, [token, adminAutenticado]);
-
-  function handleAdminLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setAdminError('');
-
-    if (adminCorreo === ADMIN_CORREO && adminPassword === ADMIN_PASSWORD) {
-      setAdminAutenticado(true);
-    } else {
-      setAdminError('Credenciales de administrador incorrectas.');
-    }
-  }
-
-  async function fetchPartidos() {
+  const fetchPartidos = useCallback(async () => {
     try {
       const res = await fetch('/api/partidos');
       const data = await res.json();
@@ -79,6 +80,47 @@ export default function AdminPage() {
       console.error('Error cargando partidos');
     } finally {
       setCargando(false);
+    }
+  }, []);
+
+  const fetchClasificacion = useCallback(async () => {
+    try {
+      const res = await fetch('/api/clasificacion');
+      const data = await res.json();
+      setGruposClasificacion(Array.isArray(data) ? data : []);
+    } catch { /* silenciar */ }
+  }, []);
+
+  useEffect(() => {
+    if (!token || !adminAutenticado) return;
+    fetchPartidos();
+    fetchClasificacion();
+  }, [token, adminAutenticado, fetchPartidos, fetchClasificacion]);
+
+  async function handleAdminLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setAdminError('');
+    setAdminCargando(true);
+
+    try {
+      // Validar credenciales en el servidor (no en el cliente)
+      const res = await fetch('/api/admin/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ correo: adminCorreo, password: adminPassword }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.ok) {
+        setAdminAutenticado(true);
+      } else {
+        setAdminError(data.error || 'Credenciales de administrador incorrectas.');
+      }
+    } catch {
+      setAdminError('Error de conexión con el servidor.');
+    } finally {
+      setAdminCargando(false);
     }
   }
 
@@ -129,6 +171,8 @@ export default function AdminPage() {
       setMensaje(data.mensaje);
       // Remover el partido de la lista
       setPartidos((prev) => prev.filter((p) => p.id !== idPartido));
+      // Refrescar clasificación
+      fetchClasificacion();
     } catch {
       setError('Error de conexión.');
     } finally {
@@ -190,8 +234,12 @@ export default function AdminPage() {
                   />
                 </div>
 
-                <button type="submit" className="btn btn-primary btn-block">
-                  Acceder al Panel
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-block"
+                  disabled={adminCargando}
+                >
+                  {adminCargando ? 'Verificando...' : 'Acceder al Panel'}
                 </button>
               </form>
             </div>
@@ -267,9 +315,27 @@ export default function AdminPage() {
               ))}
             </div>
           )}
+
+          {/* ─── Sección: Clasificación de Grupos con override manual ─── */}
+          <div className="dashboard-header" style={{ marginTop: '3rem' }}>
+            <h2>📊 Clasificación por Grupos</h2>
+            <p>Usa las flechas para ajustar manualmente el orden de clasificación de cada grupo.</p>
+          </div>
+
+          <div className="clasificacion-grid stagger">
+            {gruposClasificacion.map((g) => (
+              <TablaGrupo
+                key={g.grupo}
+                grupo={g.grupo}
+                clasificacion={g.clasificacion}
+                adminMode={true}
+                token={token}
+                onOrdenActualizado={() => fetchClasificacion()}
+              />
+            ))}
+          </div>
         </div>
       </div>
     </>
   );
 }
-

@@ -1,97 +1,47 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
-// Datos de los 12 grupos del Mundial 2026 — Fase 1
-const grupos = [
-  {
-    letra: 'A',
-    equipos: ['México', 'Sudáfrica', 'Rep. de Corea', 'Chequia'],
-    favorito: 'México',
-    revelacion: 'Chequia',
-  },
-  {
-    letra: 'B',
-    equipos: ['Canadá', 'Bosnia y Herz.', 'Catar', 'Suiza'],
-    favorito: 'Suiza',
-    revelacion: 'Canadá',
-  },
-  {
-    letra: 'C',
-    equipos: ['Brasil', 'Marruecos', 'Haití', 'Escocia'],
-    favorito: 'Brasil',
-    revelacion: 'Marruecos',
-  },
-  {
-    letra: 'D',
-    equipos: ['EE. UU.', 'Paraguay', 'Australia', 'Turquía'],
-    favorito: 'EE. UU.',
-    revelacion: 'Turquía',
-  },
-  {
-    letra: 'E',
-    equipos: ['Alemania', 'Curazao', 'Costa de Marfil', 'Ecuador'],
-    favorito: 'Alemania',
-    revelacion: 'Ecuador',
-  },
-  {
-    letra: 'F',
-    equipos: ['Países Bajos', 'Japón', 'Suecia', 'Túnez'],
-    favorito: 'Países Bajos',
-    revelacion: 'Japón',
-  },
-  {
-    letra: 'G',
-    equipos: ['Bélgica', 'Egipto', 'RI de Irán', 'Nueva Zelanda'],
-    favorito: 'Bélgica',
-    revelacion: 'Egipto',
-  },
-  {
-    letra: 'H',
-    equipos: ['España', 'Cabo Verde', 'Arabia Saudí', 'Uruguay'],
-    favorito: 'España',
-    revelacion: 'Uruguay',
-  },
-  {
-    letra: 'I',
-    equipos: ['Francia', 'Senegal', 'Irak', 'Noruega'],
-    favorito: 'Francia',
-    revelacion: 'Senegal',
-  },
-  {
-    letra: 'J',
-    equipos: ['Argentina', 'Argelia', 'Austria', 'Jordania'],
-    favorito: 'Argentina',
-    revelacion: 'Austria',
-  },
-  {
-    letra: 'K',
-    equipos: ['Portugal', 'RD Congo', 'Uzbekistán', 'Colombia'],
-    favorito: 'Portugal',
-    revelacion: 'Colombia',
-  },
-  {
-    letra: 'L',
-    equipos: ['Inglaterra', 'Croacia', 'Ghana', 'Panamá'],
-    favorito: 'Inglaterra',
-    revelacion: 'Croacia',
-  },
-];
+interface Equipo {
+  id: number;
+  nombre: string;
+  pais: string;
+}
 
-// Banderas emoji por país (aproximaciones)
+interface Grupo {
+  id: number;
+  letra: string;
+  descripcion: string | null;
+  equipos: Equipo[];
+}
+
+// Banderas emoji por país (mapa estático para display)
+// Cubre los 48 equipos del sorteo oficial FIFA 2026
 const banderas: Record<string, string> = {
-  'México': '🇲🇽', 'Sudáfrica': '🇿🇦', 'Rep. de Corea': '🇰🇷', 'Chequia': '🇨🇿',
-  'Canadá': '🇨🇦', 'Bosnia y Herz.': '🇧🇦', 'Catar': '🇶🇦', 'Suiza': '🇨🇭',
+  // Grupo A
+  'México': '🇲🇽', 'Sudáfrica': '🇿🇦', 'República de Corea': '🇰🇷', 'Chequia': '🇨🇿',
+  // Grupo B
+  'Canadá': '🇨🇦', 'Bosnia y Herzegovina': '🇧🇦', 'Catar': '🇶🇦', 'Suiza': '🇨🇭',
+  // Grupo C
   'Brasil': '🇧🇷', 'Marruecos': '🇲🇦', 'Haití': '🇭🇹', 'Escocia': '🏴󠁧󠁢󠁳󠁣󠁴󠁿',
-  'EE. UU.': '🇺🇸', 'Paraguay': '🇵🇾', 'Australia': '🇦🇺', 'Turquía': '🇹🇷',
+  // Grupo D
+  'Estados Unidos': '🇺🇸', 'Paraguay': '🇵🇾', 'Australia': '🇦🇺', 'Turquía': '🇹🇷',
+  // Grupo E
   'Alemania': '🇩🇪', 'Curazao': '🇨🇼', 'Costa de Marfil': '🇨🇮', 'Ecuador': '🇪🇨',
+  // Grupo F
   'Países Bajos': '🇳🇱', 'Japón': '🇯🇵', 'Suecia': '🇸🇪', 'Túnez': '🇹🇳',
+  // Grupo G
   'Bélgica': '🇧🇪', 'Egipto': '🇪🇬', 'RI de Irán': '🇮🇷', 'Nueva Zelanda': '🇳🇿',
-  'España': '🇪🇸', 'Cabo Verde': '🇨🇻', 'Arabia Saudí': '🇸🇦', 'Uruguay': '🇺🇾',
+  // Grupo H
+  'España': '🇪🇸', 'Islas de Cabo Verde': '🇨🇻', 'Arabia Saudí': '🇸🇦', 'Uruguay': '🇺🇾',
+  // Grupo I
   'Francia': '🇫🇷', 'Senegal': '🇸🇳', 'Irak': '🇮🇶', 'Noruega': '🇳🇴',
+  // Grupo J
   'Argentina': '🇦🇷', 'Argelia': '🇩🇿', 'Austria': '🇦🇹', 'Jordania': '🇯🇴',
+  // Grupo K
   'Portugal': '🇵🇹', 'RD Congo': '🇨🇩', 'Uzbekistán': '🇺🇿', 'Colombia': '🇨🇴',
+  // Grupo L
   'Inglaterra': '🏴󠁧󠁢󠁥󠁮󠁧󠁿', 'Croacia': '🇭🇷', 'Ghana': '🇬🇭', 'Panamá': '🇵🇦',
 };
 
@@ -103,6 +53,24 @@ export default function AuthPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [cargando, setCargando] = useState(false);
+  const [grupos, setGrupos] = useState<Grupo[]>([]);
+  const [cargandoGrupos, setCargandoGrupos] = useState(true);
+
+  // Cargar grupos desde la BD
+  useEffect(() => {
+    async function fetchGrupos() {
+      try {
+        const res = await fetch('/api/grupos');
+        const data = await res.json();
+        setGrupos(Array.isArray(data) ? data : []);
+      } catch {
+        console.error('Error cargando grupos');
+      } finally {
+        setCargandoGrupos(false);
+      }
+    }
+    fetchGrupos();
+  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -251,43 +219,39 @@ export default function AuthPage() {
             <p>48 selecciones en 12 grupos. Regístrate y pronostica quién avanzará.</p>
           </div>
 
-          <div className="grupos-grid stagger">
-            {grupos.map((grupo) => (
-              <div key={grupo.letra} className="grupo-card glass-card">
-                <div className="grupo-card-header">
-                  <span className="grupo-card-letra">Grupo {grupo.letra}</span>
-                  <span className="grupo-card-badge">0 PJ</span>
-                </div>
+          {cargandoGrupos ? (
+            <div className="loader">
+              <div className="spinner" />
+            </div>
+          ) : grupos.length === 0 ? (
+            <div className="empty-state animate-fade-in">
+              <div className="empty-state-icon">📭</div>
+              <h3>No hay datos de grupos</h3>
+              <p>Ejecuta el seed de la base de datos para poblar los grupos.</p>
+            </div>
+          ) : (
+            <div className="grupos-grid stagger">
+              {grupos.map((grupo) => (
+                <div key={grupo.letra} className="grupo-card glass-card">
+                  <div className="grupo-card-header">
+                    <span className="grupo-card-letra">Grupo {grupo.letra}</span>
+                    <span className="grupo-card-badge">{grupo.equipos.length} equipos</span>
+                  </div>
 
-                <ul className="grupo-card-equipos">
-                  {grupo.equipos.map((equipo) => (
-                    <li key={equipo} className="grupo-card-equipo">
-                      <span className="equipo-bandera">{banderas[equipo] || '🏳️'}</span>
-                      <span className="equipo-nombre">{equipo}</span>
-                      {equipo === grupo.favorito && (
-                        <span className="equipo-tag tag-favorito" title="Favorito">⭐</span>
-                      )}
-                      {equipo === grupo.revelacion && (
-                        <span className="equipo-tag tag-revelacion" title="Revelación">🔥</span>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-
-                <div className="grupo-card-footer">
-                  <span className="grupo-legend">
-                    <span className="equipo-tag tag-favorito">⭐</span> Favorito
-                  </span>
-                  <span className="grupo-legend">
-                    <span className="equipo-tag tag-revelacion">🔥</span> Revelación
-                  </span>
+                  <ul className="grupo-card-equipos">
+                    {grupo.equipos.map((equipo) => (
+                      <li key={equipo.id} className="grupo-card-equipo">
+                        <span className="equipo-bandera">{banderas[equipo.nombre] || '🏳️'}</span>
+                        <span className="equipo-nombre">{equipo.nombre}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
     </div>
   );
 }
-

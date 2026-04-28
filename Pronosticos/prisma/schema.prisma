@@ -34,8 +34,9 @@ model Grupo {
   id          Int      @id @default(autoincrement())
   letra       String   @unique // 'A'..'L'
   descripcion String?
-  equipos     Equipo[]
-  partidos    Partido[]
+  equipos                Equipo[]
+  partidos               Partido[]
+  clasificacionOverride  ClasificacionOverride?
 
   @@map("grupos")
 }
@@ -49,8 +50,10 @@ model Equipo {
   grupoId         Int       @map("grupo_id")
   logo            String?   // URL logo/bandera (opcional)
   grupo           Grupo     @relation(fields: [grupoId], references: [id])
-  partidosLocal     Partido[] @relation("EquipoLocal")
-  partidosVisitante Partido[] @relation("EquipoVisitante")
+  partidosLocal      Partido[]            @relation("EquipoLocal")
+  partidosVisitante  Partido[]            @relation("EquipoVisitante")
+  llavesComoEquipo1  LlaveEliminatoria[]  @relation("LlaveEquipo1")
+  llavesComoEquipo2  LlaveEliminatoria[]  @relation("LlaveEquipo2")
 
   @@map("equipos")
 }
@@ -77,6 +80,7 @@ model Partido {
   pronosticos         Pronostico[]
   puntuaciones        Puntuacion[]
   resultadoAdmin      ResultadoAdmin?
+  llaveEliminatoria   LlaveEliminatoria?
 
   @@map("partidos")
 }
@@ -134,4 +138,44 @@ model ResultadoAdmin {
   admin           Usuario   @relation(fields: [ingresadoPor], references: [id])
 
   @@map("resultados_admin")
+}
+
+// ─── CLASIFICACIÓN OVERRIDE ──────────────────────────────────
+// Override manual del admin para el orden de clasificación de un grupo
+model ClasificacionOverride {
+  id        Int    @id @default(autoincrement())
+  grupoId   Int    @unique @map("grupo_id")
+  ordenJson String @map("orden_json") // JSON: [idEquipo1, idEquipo2, ...]
+  grupo     Grupo  @relation(fields: [grupoId], references: [id])
+
+  @@map("clasificacion_overrides")
+}
+
+// ─── BRACKET CONFIG ──────────────────────────────────────────
+// Cruces configurables de R32 (editables por el admin sin tocar código)
+model BracketConfig {
+  id           Int    @id @default(autoincrement())
+  posicionR32  Int    @unique @map("posicion_r32")
+  descripcion  String // "1A vs 2B"
+  slot1        String // "1A", "2C", etc.
+  slot2        String // "2B", "3C/D/E", etc.
+
+  @@map("bracket_config")
+}
+
+// ─── LLAVES ELIMINATORIAS ────────────────────────────────────
+// Bracket del torneo: R32, R16, QF, SF, 3RD, FINAL
+model LlaveEliminatoria {
+  id        Int      @id @default(autoincrement())
+  ronda     String   // 'R32'|'R16'|'QF'|'SF'|'3RD'|'FINAL'
+  posicion  Int      // Posición en la ronda
+  idEquipo1 Int?     @map("id_equipo_1")
+  idEquipo2 Int?     @map("id_equipo_2")
+  idPartido Int?     @unique @map("id_partido")
+  equipo1   Equipo?  @relation("LlaveEquipo1", fields: [idEquipo1], references: [id])
+  equipo2   Equipo?  @relation("LlaveEquipo2", fields: [idEquipo2], references: [id])
+  partido   Partido? @relation(fields: [idPartido], references: [id])
+
+  @@unique([ronda, posicion])
+  @@map("llaves_eliminatorias")
 }

@@ -48,7 +48,9 @@ export default function Navbar() {
 
   const links = [
     { href: '/dashboard', label: '🏟️ Partidos' },
+    { href: '/clasificacion', label: '📊 Clasificación' },
     { href: '/ranking', label: '🏆 Ranking' },
+    { href: '/bracket', label: '🏅 Bracket' },
     { href: '/admin', label: '⚙️ Admin' },
   ];
 

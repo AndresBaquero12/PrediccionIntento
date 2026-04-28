@@ -2,12 +2,15 @@
 // CONTROLADOR: POST /api/seed — Poblar BD con datos iniciales
 // Capa 4: Controlador REST
 // Alternativa HTTP al seed de Prisma CLI
+// Datos unificados con prisma/seed.ts
 // =============================================================
 
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-// Datos de los 48 equipos organizados por grupo
+// ─── 48 equipos clasificados al Mundial 2026 (agrupados por grupo oficial) ───
+// Fuente: sorteo oficial FIFA — grupos A-L, 4 equipos por grupo
+// NOTA: Datos unificados con prisma/seed.ts
 const gruposConEquipos: Record<string, { nombre: string; pais: string }[]> = {
   A: [
     { nombre: 'México', pais: 'México' },
@@ -83,6 +86,26 @@ const gruposConEquipos: Record<string, { nombre: string; pais: string }[]> = {
   ],
 };
 
+// ─── Cruces oficiales R32 del Mundial 2026 (configurables) ───
+const crucesR32 = [
+  { posicion: 1,  slot1: '1A', slot2: '2C',     descripcion: '1A vs 2C' },
+  { posicion: 2,  slot1: '1B', slot2: '2D',     descripcion: '1B vs 2D' },
+  { posicion: 3,  slot1: '1C', slot2: '2A',     descripcion: '1C vs 2A' },
+  { posicion: 4,  slot1: '1D', slot2: '2B',     descripcion: '1D vs 2B' },
+  { posicion: 5,  slot1: '1E', slot2: '2G',     descripcion: '1E vs 2G' },
+  { posicion: 6,  slot1: '1F', slot2: '2H',     descripcion: '1F vs 2H' },
+  { posicion: 7,  slot1: '1G', slot2: '2E',     descripcion: '1G vs 2E' },
+  { posicion: 8,  slot1: '1H', slot2: '2F',     descripcion: '1H vs 2F' },
+  { posicion: 9,  slot1: '1I', slot2: '2K',     descripcion: '1I vs 2K' },
+  { posicion: 10, slot1: '1J', slot2: '2L',     descripcion: '1J vs 2L' },
+  { posicion: 11, slot1: '1K', slot2: '2I',     descripcion: '1K vs 2I' },
+  { posicion: 12, slot1: '1L', slot2: '2J',     descripcion: '1L vs 2J' },
+  { posicion: 13, slot1: '3A/B/C', slot2: '3D/E/F',  descripcion: '3° ABC vs 3° DEF' },
+  { posicion: 14, slot1: '3G/H/I', slot2: '3J/K/L',  descripcion: '3° GHI vs 3° JKL' },
+  { posicion: 15, slot1: '3A/B/C', slot2: '3G/H/I',  descripcion: '3° ABC vs 3° GHI' },
+  { posicion: 16, slot1: '3D/E/F', slot2: '3J/K/L',  descripcion: '3° DEF vs 3° JKL' },
+];
+
 function generarPartidosGrupo(equipoIds: number[]): [number, number][] {
   const partidos: [number, number][] = [];
   for (let i = 0; i < equipoIds.length; i++) {
@@ -95,16 +118,19 @@ function generarPartidosGrupo(equipoIds: number[]): [number, number][] {
 
 export async function POST() {
   try {
-    // Limpiar datos existentes (orden inverso por FK)
+    // ─── Limpiar datos existentes (orden inverso por FK) ───
     await prisma.puntuacion.deleteMany();
     await prisma.pronostico.deleteMany();
     await prisma.resultadoAdmin.deleteMany();
+    await prisma.llaveEliminatoria.deleteMany();
+    await prisma.bracketConfig.deleteMany();
+    await prisma.clasificacionOverride.deleteMany();
     await prisma.partido.deleteMany();
     await prisma.equipo.deleteMany();
     await prisma.grupo.deleteMany();
     await prisma.usuario.deleteMany();
 
-    // Crear los 12 grupos
+    // ─── Crear los 12 grupos ───
     const letras = Object.keys(gruposConEquipos);
     const gruposCreados: Record<string, number> = {};
 
@@ -115,7 +141,7 @@ export async function POST() {
       gruposCreados[letra] = grupo.id;
     }
 
-    // Crear los 48 equipos
+    // ─── Crear los 48 equipos ───
     const equiposPorGrupo: Record<string, number[]> = {};
     let totalEquipos = 0;
 
@@ -130,7 +156,7 @@ export async function POST() {
       }
     }
 
-    // Crear partidos de fase de grupos (6 por grupo = 72 totales)
+    // ─── Crear partidos de fase de grupos (6 por grupo = 72 totales) ───
     let totalPartidos = 0;
     const fechaBase = new Date('2026-06-11T18:00:00Z');
 
@@ -158,11 +184,45 @@ export async function POST() {
       }
     }
 
+    // ─── Crear BracketConfig (cruces configurables de R32) ───
+    for (const cruce of crucesR32) {
+      await prisma.bracketConfig.create({
+        data: {
+          posicionR32: cruce.posicion,
+          slot1: cruce.slot1,
+          slot2: cruce.slot2,
+          descripcion: cruce.descripcion,
+        },
+      });
+    }
+
+    // ─── Crear llaves vacías del bracket ───
+    const rondas: { ronda: string; cantidad: number }[] = [
+      { ronda: 'R32', cantidad: 16 },
+      { ronda: 'R16', cantidad: 8 },
+      { ronda: 'QF', cantidad: 4 },
+      { ronda: 'SF', cantidad: 2 },
+      { ronda: '3RD', cantidad: 1 },
+      { ronda: 'FINAL', cantidad: 1 },
+    ];
+
+    let totalLlaves = 0;
+    for (const { ronda, cantidad } of rondas) {
+      for (let i = 1; i <= cantidad; i++) {
+        await prisma.llaveEliminatoria.create({
+          data: { ronda, posicion: i },
+        });
+        totalLlaves++;
+      }
+    }
+
     return NextResponse.json({
       mensaje: 'Seed completado exitosamente',
       grupos: letras.length,
       equipos: totalEquipos,
       partidos: totalPartidos,
+      crucesR32: crucesR32.length,
+      llavesBracket: totalLlaves,
     });
   } catch (error: unknown) {
     const mensaje = error instanceof Error ? error.message : 'Error interno del servidor';
