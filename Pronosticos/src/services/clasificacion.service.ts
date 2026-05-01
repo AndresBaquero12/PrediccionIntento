@@ -227,5 +227,9 @@ export async function guardarOrdenManual(letraGrupo: string, ordenEquipoIds: num
     },
   });
 
-  return { ok: true, mensaje: `Orden manual guardado para Grupo ${letraGrupo.toUpperCase()}` };
+  // DISPARAR ACTUALIZACIÓN DEL BRACKET
+  const { actualizarBracketAutomatico } = await import('./bracket.service');
+  await actualizarBracketAutomatico();
+
+  return { ok: true, mensaje: `Orden manual guardado para Grupo ${letraGrupo.toUpperCase()}. Bracket actualizado.` };
 }

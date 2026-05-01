@@ -70,14 +70,14 @@ export default function AdminPage() {
   const fetchPartidos = useCallback(async () => {
     try {
       const res = await fetch('/api/partidos');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || `Error del servidor: ${res.status}`);
+      }
       const data = await res.json();
-      // Filtrar solo pendientes y en_juego
-      const pendientes = (Array.isArray(data) ? data : []).filter(
-        (p: Partido) => p.estado !== 'finalizado'
-      );
-      setPartidos(pendientes);
-    } catch {
-      console.error('Error cargando partidos');
+      setPartidos(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Error cargando partidos:', err);
     } finally {
       setCargando(false);
     }
@@ -267,52 +267,107 @@ export default function AdminPage() {
             <div className="loader">
               <div className="spinner" />
             </div>
-          ) : partidos.length === 0 ? (
-            <div className="empty-state animate-fade-in">
-              <div className="empty-state-icon">✅</div>
-              <h3>Todos los partidos están finalizados</h3>
-              <p>No hay partidos pendientes por registrar.</p>
-            </div>
           ) : (
-            <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-              {partidos.map((partido) => (
-                <div key={partido.id} className="admin-card">
-                  <div className="admin-card-info">
-                    <h3>
-                      {partido.equipoLocal.nombre} vs {partido.equipoVisitante.nombre}
-                    </h3>
-                    <p>
-                      {partido.fase === 'eliminatoria' ? `Eliminatoria - ${partido.etapa}` : 'Fase de Grupos'} · {formatFecha(partido.fechaInicio)}
-                    </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '3rem' }}>
+              {/* Partidos Pendientes */}
+              <section className="animate-fade-in">
+                <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  ⏳ Partidos Pendientes
+                  <span className="badge-count">{partidos.filter(p => p.estado !== 'finalizado').length}</span>
+                </h2>
+                {partidos.filter(p => p.estado !== 'finalizado').length === 0 ? (
+                  <div className="empty-state-mini">No hay partidos pendientes.</div>
+                ) : (
+                  <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                    {partidos.filter(p => p.estado !== 'finalizado').map((partido) => (
+                      <div key={partido.id} className="admin-card">
+                        <div className="admin-card-info">
+                          <h3>
+                            {partido.equipoLocal.nombre} vs {partido.equipoVisitante.nombre}
+                          </h3>
+                          <p>
+                            {partido.fase === 'eliminatoria' ? `Eliminatoria - ${partido.etapa}` : 'Fase de Grupos'} · {formatFecha(partido.fechaInicio)}
+                          </p>
+                        </div>
+                        <div className="admin-inputs">
+                          <input
+                            className="input input-score"
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={resultados[partido.id]?.golesLocal ?? ''}
+                            onChange={(e) => setResultado(partido.id, 'golesLocal', parseInt(e.target.value) || 0)}
+                          />
+                          <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>-</span>
+                          <input
+                            className="input input-score"
+                            type="number"
+                            min="0"
+                            placeholder="0"
+                            value={resultados[partido.id]?.golesVisitante ?? ''}
+                            onChange={(e) => setResultado(partido.id, 'golesVisitante', parseInt(e.target.value) || 0)}
+                          />
+                          <button
+                            className="btn btn-primary btn-sm"
+                            onClick={() => handleFinalizar(partido.id)}
+                            disabled={procesando === partido.id}
+                          >
+                            {procesando === partido.id ? '...' : 'Finalizar'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                  <div className="admin-inputs">
-                    <input
-                      className="input input-score"
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={resultados[partido.id]?.golesLocal ?? ''}
-                      onChange={(e) => setResultado(partido.id, 'golesLocal', parseInt(e.target.value) || 0)}
-                    />
-                    <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>-</span>
-                    <input
-                      className="input input-score"
-                      type="number"
-                      min="0"
-                      placeholder="0"
-                      value={resultados[partido.id]?.golesVisitante ?? ''}
-                      onChange={(e) => setResultado(partido.id, 'golesVisitante', parseInt(e.target.value) || 0)}
-                    />
-                    <button
-                      className="btn btn-primary btn-sm"
-                      onClick={() => handleFinalizar(partido.id)}
-                      disabled={procesando === partido.id}
-                    >
-                      {procesando === partido.id ? '...' : 'Finalizar'}
-                    </button>
-                  </div>
+                )}
+              </section>
+
+              {/* Partidos Finalizados (para corrección) */}
+              <section className="animate-fade-in">
+                <h2 style={{ marginBottom: '1.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  ✅ Partidos Finalizados
+                  <span className="badge-count">{partidos.filter(p => p.estado === 'finalizado').length}</span>
+                </h2>
+                <div className="stagger" style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                  {partidos.filter(p => p.estado === 'finalizado').map((partido) => (
+                    <div key={partido.id} className="admin-card admin-card-finished">
+                      <div className="admin-card-info">
+                        <h3>
+                          {partido.equipoLocal.nombre} vs {partido.equipoVisitante.nombre}
+                        </h3>
+                        <p>
+                          {partido.fase === 'eliminatoria' ? `Eliminatoria - ${partido.etapa}` : 'Fase de Grupos'} · Resultado: {partido.golesLocalReal} - {partido.golesVisitanteReal}
+                        </p>
+                      </div>
+                      <div className="admin-inputs">
+                        <input
+                          className="input input-score"
+                          type="number"
+                          min="0"
+                          placeholder={partido.golesLocalReal?.toString()}
+                          value={resultados[partido.id]?.golesLocal ?? ''}
+                          onChange={(e) => setResultado(partido.id, 'golesLocal', parseInt(e.target.value) || 0)}
+                        />
+                        <span style={{ color: 'var(--text-muted)', fontWeight: 700 }}>-</span>
+                        <input
+                          className="input input-score"
+                          type="number"
+                          min="0"
+                          placeholder={partido.golesVisitanteReal?.toString()}
+                          value={resultados[partido.id]?.golesVisitante ?? ''}
+                          onChange={(e) => setResultado(partido.id, 'golesVisitante', parseInt(e.target.value) || 0)}
+                        />
+                        <button
+                          className="btn btn-secondary btn-sm"
+                          onClick={() => handleFinalizar(partido.id)}
+                          disabled={procesando === partido.id}
+                        >
+                          {procesando === partido.id ? '...' : 'Corregir'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
+              </section>
             </div>
           )}
 

@@ -55,6 +55,7 @@ function calcularPuntos(
  * Finalizar un partido: registrar resultado real y calcular puntos de todos los pronósticos
  * CALC-RF01: Registro administrativo
  * CALC-RF05: Cálculo automático tras ingreso de resultado
+ * ADICIONAL: Permite corrección de resultados ya guardados recalculando todo.
  */
 export async function finalizarPartido(
   idPartido: number,
@@ -63,24 +64,53 @@ export async function finalizarPartido(
   adminId: number
 ) {
   // Verificar que el partido existe
-  const partido = await partidoModel.obtenerPorId(idPartido);
+  const partido = await prisma.partido.findUnique({
+    where: { id: idPartido },
+    include: { grupo: true }
+  });
+
   if (!partido) {
     throw new Error('El partido no existe.');
   }
 
-  // Verificar que no esté ya finalizado
+  // Si ya estaba finalizado, borramos las puntuaciones previas para recalcular
   if (partido.estado === 'finalizado') {
-    throw new Error('Este partido ya fue finalizado.');
+    await prisma.puntuacion.deleteMany({
+      where: { idPartido }
+    });
   }
 
-  // CALC-RF01: Registrar resultado administrativo
-  await resultadoAdminModel.registrar(idPartido, golesLocal, golesVisitante, adminId);
+  // CALC-RF01: Registrar o actualizar resultado administrativo
+  await prisma.resultadoAdmin.upsert({
+    where: { idPartido },
+    create: {
+      idPartido,
+      golesLocal,
+      golesVisitante,
+      ingresadoPor: adminId,
+    },
+    update: {
+      golesLocal,
+      golesVisitante,
+      ingresadoPor: adminId,
+      timestamp: new Date(),
+    },
+  });
 
   // Actualizar partido con resultado real
-  await partidoModel.actualizarResultado(idPartido, golesLocal, golesVisitante, 'finalizado');
+  await prisma.partido.update({
+    where: { id: idPartido },
+    data: {
+      golesLocalReal: golesLocal,
+      golesVisitanteReal: golesVisitante,
+      estado: 'finalizado'
+    },
+  });
 
   // Obtener todos los pronósticos de este partido
-  const pronosticos = await pronosticoModel.obtenerPorPartido(idPartido);
+  const pronosticos = await prisma.pronostico.findMany({
+    where: { idPartido }
+  });
 
   // CALC-RF02 a RF05: Calcular puntos para cada pronóstico
   let puntosCalculados = 0;
@@ -92,21 +122,11 @@ export async function finalizarPartido(
       pronostico.golesVisitantePredicho
     );
 
-    // Guardar puntuación en tabla separada
-    await prisma.puntuacion.upsert({
-      where: {
-        idUsuario_idPartido: {
-          idUsuario: pronostico.idUsuario,
-          idPartido,
-        },
-      },
-      create: {
+    // Guardar puntuación
+    await prisma.puntuacion.create({
+      data: {
         idUsuario: pronostico.idUsuario,
         idPartido,
-        puntos,
-        detalle,
-      },
-      update: {
         puntos,
         detalle,
       },
@@ -115,8 +135,13 @@ export async function finalizarPartido(
     puntosCalculados++;
   }
 
+  // DISPARAR ACTUALIZACIÓN DEL BRACKET
+  // Importamos dinámicamente para evitar circulares si las hubiera
+  const { actualizarBracketAutomatico } = await import('./bracket.service');
+  await actualizarBracketAutomatico();
+
   return {
-    mensaje: `Partido finalizado. Puntos calculados para ${puntosCalculados} pronósticos.`,
+    mensaje: `Resultado ${partido.estado === 'finalizado' ? 'corregido' : 'registrado'}. Puntos recalculados para ${puntosCalculados} pronósticos. Bracket actualizado.`,
     puntosCalculados,
     resultado: { golesLocal, golesVisitante },
   };

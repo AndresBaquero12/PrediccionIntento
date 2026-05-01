@@ -224,3 +224,155 @@ export async function asignarEquiposManual(
 
   return { ok: true, mensaje: 'Equipos actualizados en la llave.' };
 }
+
+// ─── Actualización Automática ────────────────────────────────
+
+/**
+ * Función maestra que sincroniza todo el bracket.
+ * Se llama después de:
+ * 1. Finalizar un partido de grupos.
+ * 2. Guardar un orden manual de grupos.
+ * 3. Finalizar un partido de eliminatoria.
+ */
+export async function actualizarBracketAutomatico() {
+  // 1. Intentar actualizar R32 desde Fase de Grupos
+  // Nota: generarLlavesR32 solo lo hace si todos los partidos de grupos terminaron
+  // o si hay lógica para permitir parciales. El requerimiento dice: 
+  // "donde aún no hay resultado se lee 'Por definir'".
+  // Así que modificaremos generarLlavesR32 para que sea más flexible.
+  await sincronizarR32();
+
+  // 2. Propagar ganadores en rondas eliminatorias (R32 -> R16 -> QF -> SF -> Final)
+  await propagarGanadoresLlaves();
+}
+
+/**
+ * Versión mejorada de sincronización de R32 que permite equipos parciales.
+ */
+async function sincronizarR32() {
+  const letras = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'];
+  const clasificadosPorGrupo = new Map<string, { primero: number | null; segundo: number | null; tercero: number | null }>();
+
+  for (const letra of letras) {
+    try {
+      const { clasificacion } = await clasificacionService.calcularClasificacionGrupo(letra);
+      // Solo tomamos clasificados si el grupo está finalizado O si queremos "viva" la tabla
+      // El requerimiento dice: "Cada vez que finalizo un partido... se definen el 1° y 2°"
+      // Así que siempre intentamos obtener los actuales 1 y 2.
+      const primero = clasificacion.find(e => e.posicion === 1)?.equipo.id || null;
+      const segundo = clasificacion.find(e => e.posicion === 2)?.equipo.id || null;
+      const tercero = clasificacion.find(e => e.posicion === 3)?.equipo.id || null;
+      
+      clasificadosPorGrupo.set(letra, { primero, segundo, tercero });
+    } catch {
+      clasificadosPorGrupo.set(letra, { primero: null, segundo: null, tercero: null });
+    }
+  }
+
+  // Mejores terceros (solo si están todos los grupos terminados para ser justos, 
+  // o según la tabla actual)
+  const tercerosStats = await clasificacionService.obtenerMejoresTerceros();
+  const mejoresTerceros = tercerosStats.map(s => ({ equipo: { id: s.equipo.id }, grupo: s.grupo }));
+
+  const config = await llaveModel.obtenerBracketConfig();
+  
+  for (const cruce of config) {
+    const eq1 = await resolverSlot(cruce.slot1, clasificadosPorGrupo as any, mejoresTerceros);
+    const eq2 = await resolverSlot(cruce.slot2, clasificadosPorGrupo as any, mejoresTerceros);
+
+    const llave = await prisma.llaveEliminatoria.findUnique({
+      where: { ronda_posicion: { ronda: 'R32', posicion: cruce.posicionR32 } },
+    });
+
+    if (llave) {
+      // Solo actualizar si han cambiado
+      if (llave.idEquipo1 !== eq1 || llave.idEquipo2 !== eq2) {
+        await llaveModel.actualizarEquipos(llave.id, eq1, eq2);
+      }
+    }
+  }
+}
+
+/**
+ * Recorre las llaves y mueve a los ganadores a la siguiente ronda.
+ */
+async function propagarGanadoresLlaves() {
+  const rondas = ['R32', 'R16', 'QF', 'SF'];
+  const siguienteRondaMap: Record<string, string> = {
+    'R32': 'R16',
+    'R16': 'QF',
+    'QF': 'SF',
+    'SF': 'FINAL'
+  };
+
+  for (const ronda of rondas) {
+    const llavesActuales = await prisma.llaveEliminatoria.findMany({
+      where: { ronda },
+      include: { partido: true }
+    });
+
+    const rondaSiguiente = siguienteRondaMap[ronda];
+
+    for (const llave of llavesActuales) {
+      let ganadorId: number | null = null;
+
+      if (llave.partido && llave.partido.estado === 'finalizado') {
+        const gl = llave.partido.golesLocalReal ?? 0;
+        const gv = llave.partido.golesVisitanteReal ?? 0;
+        const pl = llave.partido.penalesLocal ?? 0;
+        const pv = llave.partido.penalesVisitante ?? 0;
+
+        if (gl + pl > gv + pv) {
+          ganadorId = llave.idEquipo1;
+        } else if (gv + pv > gl + pl) {
+          ganadorId = llave.idEquipo2;
+        }
+      }
+
+      // Si no hay ganador (partido no jugado), el ganadorId es null (limpia la siguiente llave si se corrigió un resultado)
+      
+      const posSiguiente = Math.ceil(llave.posicion / 2);
+      const slotSiguiente = (llave.posicion % 2 !== 0) ? 'idEquipo1' : 'idEquipo2';
+
+      const llaveSiguiente = await prisma.llaveEliminatoria.findUnique({
+        where: { ronda_posicion: { ronda: rondaSiguiente, posicion: posSiguiente } }
+      });
+
+      if (llaveSiguiente) {
+        if (llaveSiguiente[slotSiguiente] !== ganadorId) {
+          await prisma.llaveEliminatoria.update({
+            where: { id: llaveSiguiente.id },
+            data: { [slotSiguiente]: ganadorId }
+          });
+        }
+      }
+
+      // Caso especial: SF perdedores van a 3RD PLACE
+      if (ronda === 'SF') {
+        let perdedorId: number | null = null;
+        if (llave.partido && llave.partido.estado === 'finalizado') {
+          const gl = llave.partido.golesLocalReal ?? 0;
+          const gv = llave.partido.golesVisitanteReal ?? 0;
+          const pl = llave.partido.penalesLocal ?? 0;
+          const pv = llave.partido.penalesVisitante ?? 0;
+
+          if (gl + pl > gv + pv) perdedorId = llave.idEquipo2;
+          else if (gv + pv > gl + pl) perdedorId = llave.idEquipo1;
+        }
+
+        const llave3ro = await prisma.llaveEliminatoria.findUnique({
+          where: { ronda_posicion: { ronda: '3RD', posicion: 1 } }
+        });
+
+        if (llave3ro) {
+          if (llave3ro[slotSiguiente] !== perdedorId) {
+            await prisma.llaveEliminatoria.update({
+              where: { id: llave3ro.id },
+              data: { [slotSiguiente]: perdedorId }
+            });
+          }
+        }
+      }
+    }
+  }
+}
